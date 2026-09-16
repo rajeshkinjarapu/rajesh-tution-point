@@ -19,7 +19,7 @@ jobs:
       - uses: shorebirdtech/setup-shorebird@v1
 
       - name: Shorebird Patch Android
-        run: shorebird patch android --force
+        run: shorebird patch android
         env:
           SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
         working-directory: ./flutter_mobile
