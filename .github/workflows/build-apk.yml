@@ -1,0 +1,27 @@
+name: Build and Upload APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Build APK
+        run: flutter build apk --release
+        working-directory: ./flutter_mobile
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rajesh-tution-point-apk
+          path: flutter_mobile/build/app/outputs/flutter-apk/app-release.apk
