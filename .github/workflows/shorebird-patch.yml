@@ -1,0 +1,22 @@
+name: Shorebird Patch
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - uses: shorebirdtech/setup-shorebird@v1
+
+      - name: Shorebird Patch Android
+        run: shorebird patch android --force
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+        working-directory: ./flutter_mobile

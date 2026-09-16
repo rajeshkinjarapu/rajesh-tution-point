@@ -1,0 +1,22 @@
+name: Shorebird Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - uses: shorebirdtech/setup-shorebird@v1
+
+      - name: Shorebird Release Android
+        run: shorebird release android --force
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+        working-directory: ./flutter_mobile
