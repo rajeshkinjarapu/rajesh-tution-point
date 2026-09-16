@@ -55,12 +55,13 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/logo.png"
+  image_path: "assets/app_logo.jpg"
 
 flutter:
   uses-material-design: true
   assets:
     - shorebird.yaml
+    - assets/app_logo.jpg
     - assets/images/logo.png
     - assets/images/admin_icons/
     - assets/images/app_icon.jpg
@@ -72,4 +73,3 @@ flutter:
     - assets/illustrations/exams.jpg
     - assets/illustrations/fees.jpg
     - assets/illustrations/reports.jpg
-
