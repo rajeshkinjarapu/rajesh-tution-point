@@ -15,8 +15,14 @@ jobs:
 
       - uses: shorebirdtech/setup-shorebird@v1
 
-      - name: Shorebird Release Android
-        run: shorebird release android --force
+      - name: Shorebird Release Android APK
+        run: shorebird release android --artifact apk --force
         env:
           SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
         working-directory: ./flutter_mobile
+
+      - name: Upload Shorebird APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shorebird-auto-update-apk
+          path: flutter_mobile/build/app/outputs/flutter-apk/app-release.apk
