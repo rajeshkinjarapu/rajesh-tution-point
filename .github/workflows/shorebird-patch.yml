@@ -1,6 +1,9 @@
 name: Shorebird Patch
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
