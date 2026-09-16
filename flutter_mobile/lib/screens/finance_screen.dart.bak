@@ -1,0 +1,1584 @@
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../services/api_service.dart';
+import '../widgets/app_drawer.dart';
+import 'dart:convert';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
+import 'student_fee_search_screen.dart';
+import 'fee_structure_management_screen.dart';
+import 'finance_reports_screen.dart';
+import 'fee_settings_screen.dart';
+import 'fee_installment_report_screen.dart';
+
+class FinanceScreen extends StatefulWidget {
+  final int initialIndex;
+  final bool showOnlyTransactions;
+  const FinanceScreen({super.key, this.initialIndex = 0, this.showOnlyTransactions = false});
+
+  @override
+  State<FinanceScreen> createState() => _FinanceScreenState();
+}
+
+class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  List<dynamic> _payments = [];
+  List<dynamic> _structures = [];
+  List<dynamic> _classes = [];
+  List<dynamic> _filteredPayments = [];
+
+  // KPIs
+  double _totalCollected = 0.0;
+  double _todayCollected = 0.0;
+  double _pendingDues = 0.0;
+
+  // Filters
+  String _searchTerm = '';
+  String _selectedClass = 'ALL';
+  String _selectedStatus = 'ALL';
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialIndex);
+    _fetchData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final results = await Future.wait([
+        ApiService.getFeePayments(),
+        ApiService.getFeeStructures(),
+        ApiService.getClasses(),
+      ]);
+
+      final paymentsRes = results[0];
+      final structuresRes = results[1];
+      final classesRes = results[2];
+
+      if (paymentsRes['success'] && structuresRes['success'] && classesRes['success']) {
+        setState(() {
+          _payments = paymentsRes['data'] ?? [];
+          _structures = structuresRes['data'] ?? [];
+          _classes = classesRes['data'] ?? [];
+          _calculateKPIs();
+          _applyFilters();
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _errorMessage = paymentsRes['message'] ?? structuresRes['message'] ?? classesRes['message'] ?? 'Failed to load finance data';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An unexpected error occurred: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _calculateKPIs() {
+    _totalCollected = 0.0;
+    _todayCollected = 0.0;
+    _pendingDues = 0.0;
+
+    final todayStr = DateTime.now().toIso8601String().split('T')[0];
+
+    for (var payment in _payments) {
+      final amount = double.tryParse(payment['amountPaid']?.toString() ?? '0.0') ?? 0.0;
+      final status = payment['status']?.toString().toUpperCase() ?? 'PENDING';
+      
+      if (status == 'PAID') {
+        _totalCollected += amount;
+
+        final payDate = payment['paymentDate']?.toString() ?? payment['createdAt']?.toString() ?? '';
+        if (payDate.startsWith(todayStr)) {
+          _todayCollected += amount;
+        }
+      }
+    }
+
+    double totalStructuresAmount = 0.0;
+    for (var struct in _structures) {
+      totalStructuresAmount += double.tryParse(struct['amount']?.toString() ?? '0.0') ?? 0.0;
+    }
+
+    _pendingDues = totalStructuresAmount - _totalCollected;
+    if (_pendingDues < 0) _pendingDues = 0.0;
+  }
+
+  void _applyFilters() {
+    setState(() {
+      _filteredPayments = _payments.where((payment) {
+        // Search filter
+        final student = payment['student'] ?? {};
+        final user = student['user'] ?? {};
+        final firstName = student['firstName'] ?? '';
+        final lastName = student['lastName'] ?? '';
+        final studentName = (user['name']?.toString() ?? '$firstName $lastName').toLowerCase();
+        
+        final searchMatch = studentName.contains(_searchTerm.toLowerCase());
+
+        // Class filter
+        final classInfo = student['class'] ?? {};
+        final classId = classInfo['id']?.toString() ?? '';
+        final classMatch = _selectedClass == 'ALL' || classId == _selectedClass;
+
+        // Status filter
+        final status = payment['status']?.toString().toUpperCase() ?? 'PENDING';
+        final statusMatch = _selectedStatus == 'ALL' || status == _selectedStatus;
+        return searchMatch && classMatch && statusMatch;
+      }).toList();
+    });
+  }
+
+  Future<void> _approvePayment(String id) async {
+    setState(() => _isLoading = true);
+    final res = await ApiService.approvePayment(id);
+    if (res['success']) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment approved successfully!'), backgroundColor: Colors.green),
+      );
+      _fetchData();
+    } else {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: ${res['message']}'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _deletePayment(String id) async {
+    setState(() => _isLoading = true);
+    final res = await ApiService.deleteFeePayment(id);
+    if (res['success']) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment record deleted successfully!'), backgroundColor: Colors.orange),
+      );
+      _fetchData();
+    } else {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: ${res['message']}'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _showRecordPaymentDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => RecordPaymentDialog(
+        classes: _classes,
+        structures: _structures,
+        onSuccess: () {
+          Navigator.pop(context);
+          _fetchData();
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      drawer: widget.showOnlyTransactions ? null : const AppDrawer(currentRoute: 'fees'),
+      appBar: AppBar(
+        title: Text(
+          widget.showOnlyTransactions ? 'Fee Transactions' : 'Finance Dashboard',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF4F46E5), Color(0xFF6366F1), Color(0xFF8B5CF6)], // Vibrant gradient
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        elevation: 0,
+        bottom: widget.showOnlyTransactions ? null : TabBar(
+          controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: const Color(0xFF10B981),
+          indicatorWeight: 4,
+          isScrollable: true,
+          labelStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+          unselectedLabelStyle: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 16),
+          tabs: const [
+            Tab(text: 'Overview'),
+            Tab(text: 'Transactions'),
+            Tab(text: 'Structures'),
+            Tab(text: 'Reminders'),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _fetchData,
+          )
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, size: 60, color: Colors.redAccent),
+                        const SizedBox(height: 16),
+                        Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.blueGrey)),
+                        const SizedBox(height: 20),
+                        ElevatedButton(onPressed: _fetchData, child: const Text('Retry')),
+                      ],
+                    ),
+                  ),
+                )
+              : widget.showOnlyTransactions
+                  ? _buildTransactionsTab()
+                  : TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildOverviewTab(),
+                        _buildTransactionsTab(),
+                        _buildStructuresTab(),
+                        _buildRemindersTab(),
+                      ],
+                    ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => const StudentFeeSearchScreen())),
+        backgroundColor: const Color(0xFF6366F1),
+        icon: const Icon(Icons.person_search_rounded, color: Colors.white),
+        label: const Text('Search Student', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildOverviewTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // KPI cards
+          _buildKPICards(),
+          const SizedBox(height: 24),
+          
+          // Charts Section
+          const Text(
+            'Financial Overview',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+          ),
+          const SizedBox(height: 12),
+          _buildCollectionPieChart(),
+          const SizedBox(height: 24),
+
+          // Overview Details header
+          const Text(
+            'Quick Actions & Status',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+          ),
+          const SizedBox(height: 12),
+
+          _buildQuickActionCard(
+            title: 'Student Fee Ledger',
+            subtitle: 'Search students and view detailed ledger',
+            icon: Icons.person_search_rounded,
+            color: const Color(0xFF10B981),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => const StudentFeeSearchScreen())),
+          ),
+          const SizedBox(height: 12),
+          _buildQuickActionCard(
+            title: 'Outstanding Collection',
+            subtitle: 'Review overall student pending dues',
+            icon: Icons.account_balance_wallet_outlined,
+            color: const Color(0xFFFF56A5),
+            onTap: () => _tabController.animateTo(1),
+          ),
+          const SizedBox(height: 12),
+          _buildQuickActionCard(
+            title: 'Class Fee Structure Configuration',
+            subtitle: 'Manage and view active fee templates',
+            icon: Icons.list_alt_rounded,
+            color: const Color(0xFF2DBDFD),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => const FeeStructureManagementScreen())),
+          ),
+          const SizedBox(height: 12),
+          _buildQuickActionCard(
+            title: 'Deep Analytics & Reports',
+            subtitle: 'Class-wise collections and payment method breakdown',
+            icon: Icons.analytics_rounded,
+            color: const Color(0xFF6366F1),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => const FinanceReportsScreen())),
+          ),
+          const SizedBox(height: 12),
+          _buildQuickActionCard(
+            title: 'Payment Installment Report',
+            subtitle: 'Student-wise payment history & installment log',
+            icon: Icons.receipt_long_rounded,
+            color: const Color(0xFF0EA5E9),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => const FeeInstallmentReportScreen())),
+          ),
+          const SizedBox(height: 12),
+          _buildQuickActionCard(
+            title: 'Fee Settings',
+            subtitle: 'Manage fee groups, heads and concessions',
+            icon: Icons.settings_rounded,
+            color: const Color(0xFF8B5CF6),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => const FeeSettingsScreen())),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKPICards() {
+    return Column(
+      children: [
+        _buildStatCard(
+          title: 'Total Collected',
+          value: '₹ ${_totalCollected.toStringAsFixed(2)}',
+          icon: Icons.check_circle_rounded,
+          gradientColors: [const Color(0xFF10B981), const Color(0xFF34D399)],
+        ),
+        const SizedBox(height: 16),
+        _buildStatCard(
+          title: 'Collected Today',
+          value: '₹ ${_todayCollected.toStringAsFixed(2)}',
+          icon: Icons.today_rounded,
+          gradientColors: [const Color(0xFF6366F1), const Color(0xFF818CF8)],
+        ),
+        const SizedBox(height: 16),
+        _buildStatCard(
+          title: 'Total Pending Dues',
+          value: '₹ ${_pendingDues.toStringAsFixed(2)}',
+          icon: Icons.pending_actions_rounded,
+          gradientColors: [const Color(0xFFEF4444), const Color(0xFFF87171)],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCollectionPieChart() {
+    double total = _totalCollected + _pendingDues;
+    if (total == 0) total = 1; // Prevent divide by zero
+
+    double collectedPct = (_totalCollected / total) * 100;
+    double pendingPct = (_pendingDues / total) * 100;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Collection vs Pending',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: const Color(0xFF1E293B)),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 200,
+            child: PieChart(
+              PieChartData(
+                sectionsSpace: 4,
+                centerSpaceRadius: 50,
+                sections: [
+                  PieChartSectionData(
+                    color: const Color(0xFF10B981),
+                    value: collectedPct,
+                    title: '${collectedPct.toStringAsFixed(1)}%',
+                    radius: 40,
+                    titleStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  PieChartSectionData(
+                    color: const Color(0xFFF43F5E),
+                    value: pendingPct,
+                    title: '${pendingPct.toStringAsFixed(1)}%',
+                    radius: 40,
+                    titleStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildLegendItem(const Color(0xFF10B981), 'Collected'),
+              const SizedBox(width: 24),
+              _buildLegendItem(const Color(0xFFF43F5E), 'Pending'),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      children: [
+        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 8),
+        Text(label, style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B), fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required List<Color> gradientColors,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: gradientColors[0].withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title.toUpperCase(),
+                style: GoogleFonts.poppins(color: Colors.white.withOpacity(0.8), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                value,
+                style: GoogleFonts.outfit(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 28),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Color(0xFF64748B)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTransactionsTab() {
+    return Column(
+      children: [
+        // Filters Section
+        _buildFiltersSection(),
+
+        // Payments list
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _fetchData,
+            child: _filteredPayments.isEmpty
+                ? const Center(child: Text('No transaction records match filters.'))
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    itemCount: _filteredPayments.length,
+                    itemBuilder: (context, index) {
+                      final payment = _filteredPayments[index];
+                      return _buildTransactionItemCard(payment);
+                    },
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFiltersSection() {
+    return Container(
+      color: const Color(0xFFF8FAFC),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(color: const Color(0xFF6366F1).withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 4)),
+              ],
+            ),
+            child: TextField(
+              onChanged: (val) {
+                setState(() {
+                  _searchTerm = val;
+                });
+                _applyFilters();
+              },
+              style: GoogleFonts.poppins(fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Search by student name or ID...',
+                hintStyle: GoogleFonts.poppins(color: const Color(0xFF94A3B8), fontSize: 14),
+                prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF6366F1)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                filled: true,
+                fillColor: Colors.transparent,
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedClass,
+                      isExpanded: true,
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
+                      style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF1E293B), fontWeight: FontWeight.w500),
+                      items: [
+                        const DropdownMenuItem(value: 'ALL', child: Text('All Classes')),
+                        ..._classes.map((c) => DropdownMenuItem(
+                              value: c['id']?.toString() ?? '',
+                              child: Text('${c['name'] ?? c['className'] ?? ''} - ${c['section'] ?? ''}'),
+                            )),
+                      ],
+                      onChanged: (val) {
+                        setState(() {
+                          _selectedClass = val ?? 'ALL';
+                        });
+                        _applyFilters();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedStatus,
+                      isExpanded: true,
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
+                      style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF1E293B), fontWeight: FontWeight.w500),
+                      items: const [
+                        DropdownMenuItem(value: 'ALL', child: Text('All Status')),
+                        DropdownMenuItem(value: 'PAID', child: Text('PAID')),
+                        DropdownMenuItem(value: 'PENDING', child: Text('PENDING')),
+                      ],
+                      onChanged: (val) {
+                        setState(() {
+                          _selectedStatus = val ?? 'ALL';
+                        });
+                        _applyFilters();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransactionItemCard(dynamic payment) {
+    final student = payment['student'] ?? {};
+    final user = student['user'] ?? {};
+    
+    String studentName = (user['name'] ?? '').toString().trim();
+    if (studentName.isEmpty) {
+       studentName = '${student['firstName'] ?? ''} ${student['lastName'] ?? ''}'.trim();
+    }
+    if (studentName.isEmpty) {
+       studentName = 'Unknown Student';
+    }
+    
+    final initials = studentName != 'Unknown Student' ? studentName.substring(0, 1).toUpperCase() : '?';
+    final photoUrl = user['photoUrl'] ?? student['photoUrl'];
+    
+    final classInfo = student['class'] ?? {};
+    final className = '${classInfo['name'] ?? classInfo['className'] ?? ''} ${classInfo['section'] ?? ''}'.trim();
+
+    final structure = payment['feeStructure'] ?? {};
+    final structureName = structure['name'] ?? 'Fee Payment';
+
+    final amountPaid = double.tryParse(payment['amountPaid']?.toString() ?? '0') ?? 0.0;
+    final method = payment['paymentMethod']?.toString() ?? 'CASH';
+    final status = payment['status']?.toString().toUpperCase() ?? 'PENDING';
+
+    final payDate = payment['paymentDate']?.toString() ?? payment['createdAt']?.toString() ?? '';
+    final dateFormatted = payDate.isNotEmpty ? payDate.split('T')[0] : 'N/A';
+
+    final isPaid = status == 'PAID' || status == 'PARTIAL';
+
+    // Status colors
+    Color statusBgColor = const Color(0xFFFFFBEB);
+    Color statusTextColor = const Color(0xFFD97706);
+    if (status == 'PAID') {
+      statusBgColor = const Color(0xFFECFDF5);
+      statusTextColor = const Color(0xFF059669);
+    } else if (status == 'PARTIAL') {
+      statusBgColor = const Color(0xFFEFF6FF);
+      statusTextColor = const Color(0xFF2563EB);
+    } else if (status == 'OVERDUE') {
+      statusBgColor = const Color(0xFFFEF2F2);
+      statusTextColor = const Color(0xFFDC2626);
+    }
+
+    final currencyFormat = NumberFormat.currency(symbol: '₹', decimalDigits: 0, locale: 'en_IN');
+
+    // Avatar gradients
+    final List<List<Color>> avatarGradients = [
+      [const Color(0xFF2DD4BF), const Color(0xFF10B981)], // Teal
+      [const Color(0xFFFB7185), const Color(0xFFE11D48)], // Rose
+      [const Color(0xFFFBBF24), const Color(0xFFF97316)], // Amber
+      [const Color(0xFF22D3EE), const Color(0xFF3B82F6)], // Sky
+      [const Color(0xFFA78BFA), const Color(0xFF7C3AED)], // Purple
+      [const Color(0xFFF472B6), const Color(0xFFDB2777)], // Pink
+    ];
+    final colorIdx = studentName.isNotEmpty ? studentName.codeUnitAt(0) % avatarGradients.length : 0;
+    final gradientColors = avatarGradients[colorIdx];
+    final baseColor = gradientColors[0];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: baseColor.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 8)),
+        ],
+        border: Border.all(color: baseColor.withOpacity(0.4), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Section with Student Info
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: gradientColors, begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: gradientColors[1].withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))],
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(25),
+                    child: (photoUrl != null && photoUrl.toString().isNotEmpty)
+                        ? Image.network(
+                            ApiService.getImageUrl(photoUrl.toString()),
+                            fit: BoxFit.cover,
+                            headers: const {'ngrok-skip-browser-warning': '69420'},
+                            errorBuilder: (c, e, s) => Center(child: Text(initials, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20))),
+                          )
+                        : Center(child: Text(initials, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20))),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        studentName,
+                        style: GoogleFonts.outfit(fontSize: 17, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: baseColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              className.isNotEmpty ? className : 'Unknown Class',
+                              style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: baseColor),
+                            ),
+                          ),
+                        ],
+                      )
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusBgColor,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    status,
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: statusTextColor,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                )
+              ],
+            ),
+          ),
+          
+          // Unified Divider instead of fragmented sections
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Container(
+              height: 1,
+              color: baseColor.withOpacity(0.15),
+            ),
+          ),
+          
+          // Amount and Details Section
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        structureName,
+                        style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFF475569), fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      currencyFormat.format(amountPaid),
+                      style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)), // Green for money
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_today_rounded, size: 14, color: Color(0xFF94A3B8)),
+                        const SizedBox(width: 6),
+                        Text(dateFormatted, style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Icon(
+                            method == 'UPI' || method == 'ONLINE' ? Icons.account_balance_wallet_rounded : Icons.money_rounded,
+                            size: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(method, style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Action Buttons Section
+          if (!widget.showOnlyTransactions)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (!isPaid)
+                    ElevatedButton.icon(
+                      onPressed: () => _approvePayment(payment['id']?.toString() ?? ''),
+                      icon: const Icon(Icons.check_circle_rounded, size: 18),
+                      label: Text('Approve', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  const SizedBox(width: 10),
+                  TextButton.icon(
+                    onPressed: () async {
+                      try {
+                        final token = await ApiService.getToken();
+                        final paymentId = payment['id']?.toString() ?? '';
+                        final url = '${ApiService.baseUrl}/api/fees/payments/$paymentId/invoice?token=$token';
+                        final uri = Uri.parse(url);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open receipt.')));
+                        }
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to download receipt.')));
+                      }
+                    },
+                    icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                    label: Text('Receipt', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF6366F1),
+                      backgroundColor: const Color(0xFFEEF2FF),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  TextButton.icon(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          title: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10)),
+                                child: const Icon(Icons.warning_rounded, color: Colors.red),
+                              ),
+                              const SizedBox(width: 12),
+                              Text('Delete Payment', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          content: Text(
+                            'Are you sure you want to delete this payment record permanently?',
+                            style: GoogleFonts.poppins(fontSize: 14),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context), 
+                              child: Text('Cancel', style: GoogleFonts.poppins(color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
+                            ),
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _deletePayment(payment['id']?.toString() ?? '');
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                elevation: 0,
+                              ),
+                              child: Text('Delete', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: Text('Delete', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      backgroundColor: const Color(0xFFFEF2F2),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStructuresTab() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _structures.length,
+      itemBuilder: (context, index) {
+        final struct = _structures[index];
+        final classObj = struct['class'] ?? {};
+        final className = '${classObj['className'] ?? ''} - ${classObj['section'] ?? ''}';
+        final feeName = struct['name'] ?? 'Fee Name';
+        final group = struct['group'] ?? 'Tuition fee';
+        final amount = double.tryParse(struct['amount']?.toString() ?? '0') ?? 0.0;
+        final status = struct['status'] ?? 'Active';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 6, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(feeName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B))),
+                    const SizedBox(height: 4),
+                    Text('Class: $className  |  Group: $group', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('₹ ${amount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF6366F1))),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: status.toUpperCase() == 'ACTIVE' ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: status.toUpperCase() == 'ACTIVE' ? Colors.green : Colors.grey,
+                      ),
+                    ),
+                  )
+                ],
+              )
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // =====================================
+  // REMINDERS TAB
+  // =====================================
+  List<dynamic> _pendingBalances = [];
+  bool _isLoadingReminders = false;
+  String _reminderSearch = '';
+  String _reminderClass = 'ALL';
+
+  Future<void> _fetchPendingBalances() async {
+    setState(() => _isLoadingReminders = true);
+    try {
+      final res = await ApiService.getPendingBalances(classId: _reminderClass, search: _reminderSearch);
+      if (mounted) {
+        setState(() {
+          _pendingBalances = res['success'] ? (res['data'] ?? []) : [];
+          _isLoadingReminders = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingReminders = false);
+      }
+    }
+  }
+
+  Widget _buildRemindersTab() {
+    // If we haven't loaded yet, trigger load
+    if (_pendingBalances.isEmpty && !_isLoadingReminders && _reminderSearch.isEmpty && _reminderClass == 'ALL') {
+      _fetchPendingBalances();
+    }
+
+    return Column(
+      children: [
+        // Filters
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  onChanged: (val) {
+                    _reminderSearch = val;
+                  },
+                  onSubmitted: (_) => _fetchPendingBalances(),
+                  decoration: InputDecoration(
+                    hintText: 'Search student...',
+                    prefixIcon: const Icon(Icons.search),
+                    fillColor: const Color(0xFFF1F5F9),
+                    filled: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 1,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _reminderClass,
+                      isExpanded: true,
+                      style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B)),
+                      items: [
+                        const DropdownMenuItem(value: 'ALL', child: Text('All')),
+                        ..._classes.map((c) => DropdownMenuItem(
+                              value: c['id']?.toString() ?? '',
+                              child: Text('${c['className'] ?? ''}-${c['section'] ?? ''}'),
+                            )),
+                      ],
+                      onChanged: (val) {
+                        setState(() => _reminderClass = val ?? 'ALL');
+                        _fetchPendingBalances();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // List
+        Expanded(
+          child: _isLoadingReminders
+              ? const Center(child: CircularProgressIndicator())
+              : _pendingBalances.isEmpty
+                  ? const Center(child: Text('No students with pending balances.'))
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _pendingBalances.length,
+                      itemBuilder: (context, index) {
+                        final student = _pendingBalances[index];
+                        final name = student['name'] ?? '';
+                        final className = student['className'] ?? '';
+                        final balance = double.tryParse(student['balance']?.toString() ?? '0') ?? 0;
+                        final phone = student['phone']?.toString() ?? '';
+                        final photo = student['photo'];
+                        final image = photo != null && photo.isNotEmpty
+                            ? NetworkImage(photo)
+                            : NetworkImage('https://ui-avatars.com/api/?name=${Uri.encodeComponent(name)}');
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+                            ],
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(radius: 26, backgroundImage: image as ImageProvider),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(name, style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: const Color(0xFF1E293B))),
+                                    const SizedBox(height: 4),
+                                    Text('Class: $className', style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B))),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Total Fee', style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF94A3B8))),
+                                            Text('₹${(double.tryParse(student['totalFee']?.toString() ?? '0') ?? 0).toStringAsFixed(0)}', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13, color: const Color(0xFF64748B))),
+                                          ],
+                                        ),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Paid', style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF94A3B8))),
+                                            Text('₹${(double.tryParse(student['paidAmount']?.toString() ?? '0') ?? 0).toStringAsFixed(0)}', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13, color: const Color(0xFF10B981))),
+                                          ],
+                                        ),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Due', style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF94A3B8))),
+                                            Text('₹${balance.toStringAsFixed(0)}', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14, color: const Color(0xFFEF4444))),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () async {
+                                  if (phone.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No phone number found.')));
+                                    return;
+                                  }
+                                  final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+                                  final fullPhone = cleanPhone.length == 10 ? '91$cleanPhone' : cleanPhone;
+                                  final msg = Uri.encodeComponent(
+                                      "Dear Parent of *$name* ($className),\n\nThis is a gentle reminder from *Rajesh Tution Point*.\n\nYour child's outstanding fee balance is *\u20B9${balance.toStringAsFixed(0)}*.\n\nKindly clear the dues at the earliest to avoid any inconvenience.\n\nFor queries, contact the school office.\n\nThank you,\nRajesh Tution Point Administration");
+                                  final url = 'https://wa.me/$fullPhone?text=$msg';
+                                  
+                                  // Requires url_launcher
+                                  try {
+                                    final Uri uri = Uri.parse(url);
+                                    if (await canLaunchUrl(uri)) {
+                                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch WhatsApp.')));
+                                    }
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to open WhatsApp.')));
+                                  }
+                                },
+                                icon: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF25D366).withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.message, color: Color(0xFF25D366), size: 20),
+                                ),
+                                tooltip: 'Send WhatsApp Reminder',
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+        )
+      ],
+    );
+  }
+}
+
+// Dialog for recording payments
+class RecordPaymentDialog extends StatefulWidget {
+  final List<dynamic> classes;
+  final List<dynamic> structures;
+  final VoidCallback onSuccess;
+
+  const RecordPaymentDialog({
+    super.key,
+    required this.classes,
+    required this.structures,
+    required this.onSuccess,
+  });
+
+  @override
+  State<RecordPaymentDialog> createState() => _RecordPaymentDialogState();
+}
+
+class _RecordPaymentDialogState extends State<RecordPaymentDialog> {
+  String? _selectedClassId;
+  String? _selectedStudentId;
+  String? _selectedStructureId;
+  String _selectedMethod = 'CASH';
+  final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _remarksController = TextEditingController();
+
+  List<dynamic> _students = [];
+  bool _loadingStudents = false;
+  bool _isSubmitting = false;
+
+  Future<void> _fetchClassStudents(String classId) async {
+    setState(() {
+      _loadingStudents = true;
+      _selectedStudentId = null;
+      _students = [];
+    });
+
+    final res = await ApiService.getClassStudents(classId);
+
+    if (mounted) {
+      setState(() {
+        if (res['success']) {
+          _students = res['data'] ?? [];
+        }
+        _loadingStudents = false;
+      });
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_selectedStudentId == null || _selectedStructureId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select Student and Fee Category'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    final amountStr = _amountController.text.trim();
+    if (amountStr.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter an amount'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    final amount = double.tryParse(amountStr);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid positive amount'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    final now = DateTime.now();
+    final paymentDate = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    final res = await ApiService.recordPayments([
+      {
+        'studentId': _selectedStudentId!,
+        'feeStructureId': _selectedStructureId!,
+        'amountPaid': amount,
+        'paymentMethod': _selectedMethod,
+        'paymentDate': paymentDate,
+        'remarks': _remarksController.text.trim(),
+      }
+    ]);
+
+    if (mounted) {
+      setState(() => _isSubmitting = false);
+      if (res['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment recorded successfully!'), backgroundColor: Colors.green),
+        );
+        widget.onSuccess();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(res['message'] ?? 'Failed to record payment'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Filter structures matching the selected class
+    final availableStructures = _selectedClassId == null
+        ? widget.structures
+        : widget.structures.where((s) => s['class']?['id']?.toString() == _selectedClassId).toList();
+
+    return AlertDialog(
+      title: const Text('Record Fee Payment', style: TextStyle(fontWeight: FontWeight.bold)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Select Class
+            const Text('Select Class', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  hint: const Text('Choose Class'),
+                  value: _selectedClassId,
+                  isExpanded: true,
+                  items: widget.classes.map((c) => DropdownMenuItem(
+                        value: c['id']?.toString() ?? '',
+                        child: Text('${c['className'] ?? ''} - ${c['section'] ?? ''}'),
+                      )).toList(),
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedClassId = val;
+                    });
+                    if (val != null) {
+                      _fetchClassStudents(val);
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Select Student
+            const Text('Select Student', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
+              child: DropdownButtonHideUnderline(
+                child: _loadingStudents
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                      )
+                    : DropdownButton<String>(
+                        hint: const Text('Choose Student'),
+                        value: _selectedStudentId,
+                        isExpanded: true,
+                        items: _students.map((s) {
+                          final name = '${s['firstName'] ?? ''} ${s['lastName'] ?? ''}';
+                          return DropdownMenuItem(
+                            value: s['id']?.toString() ?? '',
+                            child: Text(name),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          setState(() {
+                            _selectedStudentId = val;
+                          });
+                        },
+                      ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Select Structure / Fee Type
+            const Text('Select Fee Category', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  hint: const Text('Choose Fee Category'),
+                  value: _selectedStructureId,
+                  isExpanded: true,
+                  items: availableStructures.map((s) {
+                    final name = s['name'] ?? 'Fee';
+                    final amount = s['amount']?.toString() ?? '0';
+                    return DropdownMenuItem(
+                      value: s['id']?.toString() ?? '',
+                      child: Text('$name (\u20B9$amount)'),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedStructureId = val;
+                    });
+                    // Autofill structure amount
+                    if (val != null) {
+                      final matched = widget.structures.firstWhere((s) => s['id']?.toString() == val, orElse: () => null);
+                      if (matched != null) {
+                        _amountController.text = matched['amount']?.toString() ?? '';
+                      }
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Payment Method
+            const Text('Payment Method', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedMethod,
+                  isExpanded: true,
+                  items: const [
+                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                    DropdownMenuItem(value: 'UPI', child: Text('UPI / PhonePe / GPay')),
+                    DropdownMenuItem(value: 'BANK_TRANSFER', child: Text('Bank Transfer / IMPS')),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedMethod = val ?? 'CASH';
+                    });
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Amount
+            const Text('Amount Paid (₹)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _amountController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                hintText: 'Enter amount',
+                fillColor: const Color(0xFFF1F5F9),
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Remarks
+            const Text('Remarks / Transaction Ref', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _remarksController,
+              decoration: InputDecoration(
+                hintText: 'Enter remarks',
+                fillColor: const Color(0xFFF1F5F9),
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+        ),
+        ElevatedButton(
+          onPressed: _isSubmitting ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF6366F1),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: _isSubmitting
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Text('Submit Payment', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+}

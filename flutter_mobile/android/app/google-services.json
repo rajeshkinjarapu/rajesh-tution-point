@@ -1,0 +1,86 @@
+{
+  "project_info": {
+    "project_number": "347449635776",
+    "project_id": "jyschool-dde0c",
+    "storage_bucket": "jyschool-dde0c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:347449635776:android:81248f3a371b6c0aec8e25",
+        "android_client_info": {
+          "package_name": "com.jyschool.erp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfTYEwEBNyW2UoLuAK7X2DwZCks5vggr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:347449635776:android:81248f3a371b6c0aec8e25",
+        "android_client_info": {
+          "package_name": "com.jyschool.erp.student"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfTYEwEBNyW2UoLuAK7X2DwZCks5vggr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:347449635776:android:81248f3a371b6c0aec8e25",
+        "android_client_info": {
+          "package_name": "com.jyschool.erp.teacher"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfTYEwEBNyW2UoLuAK7X2DwZCks5vggr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:347449635776:android:81248f3a371b6c0aec8e25",
+        "android_client_info": {
+          "package_name": "com.jyschool.erp.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfTYEwEBNyW2UoLuAK7X2DwZCks5vggr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

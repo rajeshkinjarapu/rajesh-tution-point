@@ -1,0 +1,75 @@
+name: rajesh_tution_point
+description: Rajesh Tution Point - Student Management App.
+publish_to: 'none'
+
+version: 1.0.4+5
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Icons and style
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  font_awesome_flutter: ^11.0.0
+
+  # API & Utilities
+  http: ^1.2.0
+  shared_preferences: ^2.2.2
+  jwt_decoder: ^2.0.1
+  flutter_local_notifications: ^17.1.2
+  url_launcher: ^6.2.5
+  fl_chart: ^0.68.0
+  firebase_core: ^3.1.0
+  firebase_messaging: ^15.0.0
+  image_picker: ^1.1.2
+  intl: ^0.20.3
+  pdf: ^3.13.0
+  printing: ^5.15.0
+  local_auth: ^2.3.0
+  flutter_secure_storage: ^9.2.2
+  connectivity_plus: ^6.1.0
+  uuid: ^4.5.1
+  path_provider: ^2.1.6
+  share_plus: ^12.0.2
+  mobile_scanner: ^5.0.0
+  qr_flutter: ^4.1.0
+  flutter_tex: ^4.0.3+2
+  package_info_plus: ^8.0.0
+  dio: ^5.4.3
+  open_file: ^3.3.2
+  webview_flutter: ^4.10.0
+  device_info_plus: ^10.1.0
+  supabase_flutter: ^2.5.4
+  postgres: ^3.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - shorebird.yaml
+    - assets/images/logo.png
+    - assets/images/admin_icons/
+    - assets/images/app_icon.jpg
+    - assets/illustrations/students.jpg
+    - assets/illustrations/teacher.jpg
+    - assets/illustrations/classes.jpg
+    - assets/illustrations/revenue.jpg
+    - assets/illustrations/payment.jpg
+    - assets/illustrations/exams.jpg
+    - assets/illustrations/fees.jpg
+    - assets/illustrations/reports.jpg
+

@@ -1,0 +1,3 @@
+
+*.json
+flutter_mobile/android/app/*.json

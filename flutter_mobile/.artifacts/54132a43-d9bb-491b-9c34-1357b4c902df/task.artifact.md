@@ -1,0 +1,3 @@
+- [x] Remove "Total Teachers" header from `lib/screens/teachers_screen.dart`
+- [x] Adjust Search Bar position and remove `Transform.translate`
+- [x] Verify UI layout
