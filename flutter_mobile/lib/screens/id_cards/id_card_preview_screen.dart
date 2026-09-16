@@ -205,7 +205,7 @@ class _IdCardPreviewScreenState extends State<IdCardPreviewScreen> with SingleTi
                 children: [
                   const Icon(Icons.school, color: Colors.white, size: 24),
                   const SizedBox(height: 4),
-                  Text('JY INTERNATIONAL SCHOOL', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+                  Text('RAJESH TUTION POINT', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                 ],
               ),
             ),
@@ -291,7 +291,7 @@ class _IdCardPreviewScreenState extends State<IdCardPreviewScreen> with SingleTi
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('JY INTERNATIONAL SCHOOL', style: GoogleFonts.inter(color: widget.templateColor, fontWeight: FontWeight.bold, fontSize: 11)),
+                          Text('RAJESH TUTION POINT', style: GoogleFonts.inter(color: widget.templateColor, fontWeight: FontWeight.bold, fontSize: 11)),
                           Text('123 Main Street, Education Hub', style: GoogleFonts.inter(color: Colors.grey.shade500, fontSize: 8)),
                         ],
                       ),
@@ -363,7 +363,7 @@ class _IdCardPreviewScreenState extends State<IdCardPreviewScreen> with SingleTi
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 16.0),
-            child: Text('JY INTERNATIONAL SCHOOL', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+            child: Text('RAJESH TUTION POINT', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
           ),
           Positioned(
             top: 50,
@@ -458,7 +458,7 @@ class _IdCardPreviewScreenState extends State<IdCardPreviewScreen> with SingleTi
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _bulletPoint('This card is the property of JY International School.'),
+                  _bulletPoint('This card is the property of RAJESH TUTION POINT.'),
                   _bulletPoint('Must be worn at all times while in the school premises.'),
                   _bulletPoint('If lost, report immediately to the administration.'),
                   _bulletPoint('This card is non-transferable.'),
@@ -469,7 +469,7 @@ class _IdCardPreviewScreenState extends State<IdCardPreviewScreen> with SingleTi
                     child: Column(
                       children: [
                         Text('If found, please return to:', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 9)),
-                        Text('JY International School', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 9)),
+                        Text('RAJESH TUTION POINT', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 9)),
                         Text('123 Main Street, Education Hub', style: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 8)),
                         Text('Ph: +91 98765 43210', style: GoogleFonts.inter(fontSize: 8)),
                       ],

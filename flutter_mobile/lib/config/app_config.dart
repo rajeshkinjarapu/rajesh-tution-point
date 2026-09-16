@@ -66,8 +66,8 @@ class AppConfig {
   // 🎓 Student & Parent App Configuration
   static const AppConfig _studentConfig = AppConfig(
     flavor: AppFlavor.student,
-    appName: 'JY - Student',
-    appId: 'com.jyschool.erp.student',
+    appName: 'Rajesh Tution - Student',
+    appId: 'com.rajeshtution.erp.student',
     primaryColor: Color(0xFF4F46E5), // Indigo
     secondaryColor: Color(0xFF06B6D4), // Cyan
     brandGradient: LinearGradient(
@@ -87,8 +87,8 @@ class AppConfig {
   // 👨‍🏫 Teacher & Staff App Configuration
   static const AppConfig _teacherConfig = AppConfig(
     flavor: AppFlavor.teacher,
-    appName: 'JY - Teacher',
-    appId: 'com.jyschool.erp.teacher',
+    appName: 'Rajesh Tution - Teacher',
+    appId: 'com.rajeshtution.erp.teacher',
     primaryColor: Color(0xFF059669), // Emerald
     secondaryColor: Color(0xFF0D9488), // Teal
     brandGradient: LinearGradient(
@@ -108,8 +108,8 @@ class AppConfig {
   // 🏛️ Admin & Management App Configuration
   static const AppConfig _adminConfig = AppConfig(
     flavor: AppFlavor.admin,
-    appName: 'JY - Admin',
-    appId: 'com.jyschool.erp.admin',
+    appName: 'Rajesh Tution - Admin',
+    appId: 'com.rajeshtution.erp.admin',
     primaryColor: Color(0xFF1E1B4B), // Deep Slate Navy
     secondaryColor: Color(0xFF7C3AED), // Royal Purple
     brandGradient: LinearGradient(
@@ -130,7 +130,7 @@ class AppConfig {
   static const AppConfig _universalConfig = AppConfig(
     flavor: AppFlavor.universal,
     appName: 'Rajesh Tution Point',
-    appId: 'com.jyschool.erp',
+    appId: 'com.rajeshtution.erp',
     primaryColor: Color(0xFF6366F1),
     secondaryColor: Color(0xFFD946EF),
     brandGradient: LinearGradient(

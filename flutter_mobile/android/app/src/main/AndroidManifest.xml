@@ -29,7 +29,7 @@
         <!-- Set default FCM channel for Heads-up (Hero banner) notifications -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="jyschool_alerts_v3" />
+            android:value="rajeshtution_alerts_v3" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

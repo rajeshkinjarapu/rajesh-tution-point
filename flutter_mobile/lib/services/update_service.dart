@@ -140,7 +140,7 @@ class _ModernUpdateDialogState extends State<_ModernUpdateDialog> with SingleTic
 
     try {
       Directory? dir = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
-      String fileName = "JY_School_v${widget.latestVersion}.apk";
+      String fileName = "Rajesh_Tution_v${widget.latestVersion}.apk";
       String savePath = "${dir.path}/$fileName";
 
       // Remove existing temp file if present
